@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230f1419'/><path d='M37 5 L15 37 H30 L27 59 L49 25 H34 Z' fill='%23ffd93d' stroke='%23ffb454' stroke-width='1.5' stroke-linejoin='round'/></svg>">
+<title>Расчёт нагрузок и распределение по фазам</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1a2129; --panel2:#222b35; --line:#2e3a47;
+    --text:#e6edf3; --muted:#8b98a5; --accent:#4aa3ff; --accent2:#2d7dd2;
+    --a:#ff6b6b; --b:#ffd93d; --c:#6bcb77; --warn:#ffb454; --ok:#6bcb77;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+  header{padding:16px 20px;background:var(--panel);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:16px}
+  header h1{margin:0;font-size:18px}
+  header p{margin:4px 0 0;color:var(--muted);font-size:12px}
+  /* экран входа */
+  .authscreen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
+    justify-content:center;z-index:80;padding:16px}
+  .authbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px;
+    width:100%;max-width:360px}
+  .authbox input{width:100%;margin-bottom:10px;padding:10px;font-size:14px}
+  .authtabs{display:flex;gap:8px;margin-bottom:16px}
+  .authtabs button{flex:1;background:transparent;border:1px solid var(--line);color:var(--muted);padding:8px}
+  .authtabs button.active{background:var(--accent2);color:#fff;border-color:var(--accent2)}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--accent)}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11px;color:var(--muted)}
+  select,input{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:6px;padding:7px 9px;font-size:13px;outline:none}
+  select:focus,input:focus{border-color:var(--accent)}
+  button{background:var(--accent2);color:#fff;border:none;border-radius:6px;padding:8px 14px;
+    font-size:13px;cursor:pointer;font-weight:600}
+  button:hover{background:var(--accent)}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  button.ghost:hover{border-color:var(--accent);background:var(--panel2)}
+  button.danger{background:transparent;border:1px solid #5a3a3a;color:var(--a);padding:5px 9px}
+  button.danger:hover{background:#3a2a2a}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+  td input,td select{width:100%;padding:5px 6px}
+  td.num input{text-align:right}
+  .right{text-align:right}
+  .phaseA{color:var(--a)} .phaseB{color:var(--b)} .phaseC{color:var(--c)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px}
+  .badge.A{background:rgba(255,107,107,.15);color:var(--a)}
+  .badge.B{background:rgba(255,217,61,.15);color:var(--b)}
+  .badge.C{background:rgba(107,203,119,.15);color:var(--c)}
+  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+  .pbox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;border-left:4px solid}
+  .pbox.A{border-left-color:var(--a)} .pbox.B{border-left-color:var(--b)} .pbox.C{border-left-color:var(--c)}
+  .pbox .t{font-size:12px;color:var(--muted)}
+  .pbox .v{font-size:22px;font-weight:700;margin-top:2px}
+  .pbox .s{font-size:12px;color:var(--muted);margin-top:2px}
+  .totals{display:flex;gap:24px;flex-wrap:wrap;padding-top:6px}
+  .totals .it{font-size:13px}
+  .totals .it b{font-size:18px;display:block;margin-top:2px}
+  .rec{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .rec .ri{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px}
+  .rec .ri .t{font-size:12px;color:var(--muted)}
+  .rec .ri .v{font-size:20px;font-weight:700;margin-top:4px;color:var(--ok)}
+  .rec .ri .s{font-size:11px;color:var(--muted);margin-top:4px}
+  .bar{height:10px;background:var(--panel);border-radius:5px;overflow:hidden;margin-top:8px;display:flex}
+  .note{font-size:12px;color:var(--muted);line-height:1.5}
+  /* выбор типа объекта */
+  .chooser{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:760px;margin:30px auto}
+  .choice{background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:24px;
+    cursor:pointer;text-align:center;transition:.15s}
+  .choice:hover{border-color:var(--accent);transform:translateY(-2px);background:var(--panel2)}
+  .choice .ico{font-size:46px;line-height:1}
+  .choice h3{margin:12px 0 6px;font-size:18px}
+  .choice p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+  .modebar{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:10px 14px;margin-bottom:16px}
+  .modebar .mt{font-weight:700;font-size:15px}
+  .modebar .ms{color:var(--muted);font-size:12px}
+  @media(max-width:600px){.chooser{grid-template-columns:1fr}}
+  /* модальное окно «свой вариант» */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;
+    align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:22px;width:100%;max-width:440px}
+  .modal h3{color:var(--accent)}
+  .mfield{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .mfield label{font-size:12px;color:var(--muted)}
+  .mfield input,.mfield select{width:100%}
+  .mrow{display:flex;gap:10px}
+  .mrow .mfield{flex:1}
+  /* автоподсказки поиска по базе */
+  .ac{position:fixed;z-index:60;background:var(--panel2);border:1px solid var(--accent);
+    border-radius:6px;max-height:260px;overflow:auto;box-shadow:0 10px 28px rgba(0,0,0,.45)}
+  .ac .it{padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--line);
+    white-space:nowrap;font-size:13px}
+  .ac .it:last-child{border-bottom:none}
+  .ac .it:hover,.ac .it.sel{background:var(--accent2)}
+  .ac .it .cat{color:var(--accent);font-size:11px;margin-left:8px}
+  .ac .it .meta{color:var(--muted);font-size:11px;margin-left:8px}
+  /* панель групп */
+  .groupbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .gchip{display:flex;align-items:center;gap:4px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:16px;padding:3px 4px 3px 10px}
+  .gchip .gdot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .gchip input{background:transparent;border:none;color:var(--text);width:92px;font-size:13px;padding:2px 2px}
+  .gchip input:focus{outline:1px solid var(--accent);border-radius:4px}
+  .gchip .gx{background:transparent;border:none;color:var(--a);cursor:pointer;font-size:13px;padding:2px 6px}
+  .gchip .gx:hover{color:#fff}
+  .grouprow td{background:rgba(74,163,255,.06)}
+  .imbalance{font-weight:700}
+  .imbalance.good{color:var(--ok)} .imbalance.warn{color:var(--warn)} .imbalance.bad{color:var(--a)}
+  .muted{color:var(--muted)}
+  @media(max-width:720px){.summary{grid-template-columns:1fr}}
+
+  /* ===== Печать / PDF (A4) ===== */
+  #printArea{display:none}
+  #printArea h1{font-size:18px;margin:0 0 4px}
+  #printArea .sub{font-size:12px;color:#444;margin-bottom:14px}
+  #printArea h2{font-size:14px;margin:18px 0 6px;border-bottom:1px solid #000;padding-bottom:3px}
+  #printArea table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+  #printArea th,#printArea td{border:1px solid #999;padding:4px 6px;text-align:left}
+  #printArea th{background:#eee}
+  #printArea td.r,#printArea th.r{text-align:right}
+  #printArea .grid{display:flex;gap:24px;flex-wrap:wrap;font-size:12px;margin-top:8px}
+  #printArea .grid b{display:block;font-size:14px}
+  #printArea .foot{margin-top:18px;font-size:10px;color:#555}
+  @media print{
+    @page{ size:A4; margin:14mm; }
+    body{background:#fff}
+    body *{visibility:hidden}
+    #printArea,#printArea *{visibility:visible}
+    #printArea{display:block;position:absolute;left:0;top:0;width:100%;color:#000}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>⚡ Расчёт электрических нагрузок и распределение по фазам</h1>
+    <p id="headSub">Выберите тип объекта, чтобы начать.</p>
+  </div>
+  <div id="userBar" style="display:none;margin-left:auto;align-items:center;gap:12px">
+    <span class="muted" id="userEmail" style="font-size:13px"></span>
+    <a id="adminLink" href="admin.html" style="display:none;color:var(--accent);font-size:13px">Админ-панель</a>
+    <button class="ghost" onclick="logout()">Выйти</button>
+  </div>
+</header>
+
+<!-- Экран входа / регистрации (только онлайн) -->
+<div id="authScreen" class="authscreen" data-mode="login" style="display:none">
+  <div class="authbox">
+    <h2 style="margin:0 0 4px">⚡ Вход в программу</h2>
+    <p class="muted" style="margin:0 0 16px;font-size:13px">Расчёт электрических нагрузок</p>
+    <div class="authtabs">
+      <button id="authLoginBtn" class="active" onclick="authTab('login')">Вход</button>
+      <button id="authRegBtn" onclick="authTab('reg')">Регистрация</button>
+    </div>
+    <form id="authForm" onsubmit="authSubmit(event); return false;">
+      <input id="authEmail" name="email" type="email" placeholder="email" autocomplete="username">
+      <input id="authPass" name="password" type="password" placeholder="пароль" autocomplete="current-password">
+      <div id="authErr" style="color:var(--a);font-size:12px;min-height:16px;margin:2px 0"></div>
+      <button id="authSubmitBtn" type="submit" style="width:100%">Войти</button>
+    </form>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- Стартовый выбор типа объекта -->
+  <div id="chooser" class="chooser">
+    <div class="choice" onclick="setMode('residential')">
+      <div class="ico">🏢</div>
+      <h3>Жилой дом / квартира</h3>
+      <p>Одна квартира или частный дом с гаражом и баней.</p>
+    </div>
+    <div class="choice" onclick="setMode('industrial')">
+      <div class="ico">🏭</div>
+      <h3>Промышленный объект</h3>
+      <p>Станки, насосы, вентиляторы, краны, грузовые лифты, сварка.</p>
+    </div>
+  </div>
+
+  <!-- Основная рабочая область (скрыта до выбора типа) -->
+  <div id="main" style="display:none">
+
+  <div class="modebar">
+    <span class="ico" id="modeIco" style="font-size:24px"></span>
+    <div>
+      <div class="mt" id="modeTitle"></div>
+      <div class="ms" id="modeNorm"></div>
+    </div>
+    <button class="ghost" style="margin-left:auto" onclick="changeMode()">← Сменить тип объекта</button>
+  </div>
+
+  <div class="card">
+    <h2>Параметры сети</h2>
+    <div class="controls">
+      <div class="field">
+        <label>ЛИНЕЙНОЕ НАПРЯЖЕНИЕ, В (3Ф)</label>
+        <input id="uLine" type="number" value="400" step="1" style="width:120px">
+      </div>
+      <div class="field">
+        <label>Фазное напряжение, В (1ф)</label>
+        <input id="uPhase" type="number" value="230" step="1" style="width:120px">
+      </div>
+      <div class="field">
+        <label>Материал жилы</label>
+        <select id="cableMat" style="width:130px">
+          <option value="cu">Медь</option>
+          <option value="al">Алюминий</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Прокладка</label>
+        <select id="cableLay" style="width:170px">
+          <option value="pipe">В трубе (3 жилы)</option>
+          <option value="air">Открыто / воздух</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Список нагрузок</h2>
+
+    <input type="file" id="xlsxInput" accept=".xlsx" style="display:none"
+      onchange="if(this.files[0]){importExcel(MODE,this.files[0]); this.value='';}">
+    <input type="file" id="dirInput" webkitdirectory multiple style="display:none"
+      onchange="importFolder(MODE,this.files); this.value='';">
+    <input type="file" id="baseXlsxInput" accept=".xlsx" style="display:none"
+      onchange="if(this.files[0]){importBaseExcel(this.files[0]); this.value='';}">
+
+    <!-- верхняя панель: база и добавление нагрузок -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <button onclick="useBase()">🗂 Использовать базу</button>
+      <button class="ghost" onclick="openCustom()">➕ Добавить свой вариант</button>
+      <select id="presetPick" onchange="addFromPreset()" style="min-width:240px"></select>
+      <button id="btnFileOffline" class="ghost" onclick="document.getElementById('xlsxInput').click()">📂 Загрузить один файл</button>
+      <button id="btnXlsxExport" class="ghost" style="display:none" onclick="exportBaseExcel()">📤 Скачать базу (Excel)</button>
+      <button id="btnXlsxImport" class="ghost" style="display:none" onclick="document.getElementById('baseXlsxInput').click()">📥 Загрузить Excel в базу</button>
+    </div>
+
+    <!-- панель групп -->
+    <div id="groupBar" class="groupbar"></div>
+
+    <table id="loadTable">
+      <thead>
+        <tr>
+          <th style="width:19%">Название</th>
+          <th style="width:13%">Группа</th>
+          <th style="width:9%">ЧИСЛО ФАЗ</th>
+          <th style="width:10%">МОЩНОСТЬ, кВт</th>
+          <th style="width:9%">КОЭФ. МОЩН.</th>
+          <th style="width:9%">КОЭФ. СПРОСА</th>
+          <th style="width:7%">Кол-во</th>
+          <th style="width:9%">Расч. мощн. кВт</th>
+          <th style="width:9%">Фаза</th>
+          <th style="width:5%"></th>
+        </tr>
+      </thead>
+      <tbody id="loadBody"></tbody>
+    </table>
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="ghost" onclick="addEmptyRow()">+ Добавить строку</button>
+      <button class="ghost" onclick="addGroup()">+ Группа</button>
+      <button onclick="calculate()">Рассчитать и распределить</button>
+      <button class="ghost" onclick="loadDemo()">Добавить весь справочник</button>
+      <button class="ghost" onclick="clearAll()">Очистить</button>
+    </div>
+  </div>
+
+  <!-- плавающий список автоподсказок поиска по базе -->
+  <div id="acBox" class="ac" style="display:none"></div>
+
+  <!-- область для печати / PDF (A4) -->
+  <div id="printArea"></div>
+
+  <!-- модальное окно «свой вариант» -->
+  <div id="customModal" class="modal-bg" style="display:none">
+    <div class="modal">
+      <h3 style="margin:0 0 14px">Своя нагрузка</h3>
+      <div class="mfield"><label>Название *</label><input id="cName" placeholder="Напр. Сушильная машина"></div>
+      <div class="mfield"><label>Категория (необязательно)</label><input id="cCat" placeholder="Напр. Бытовая техника"></div>
+      <div class="mrow">
+        <div class="mfield"><label>Тип</label>
+          <select id="cType"><option value="1">1-фазная</option><option value="3">3-фазная</option></select></div>
+        <div class="mfield"><label>Мощность, кВт</label><input id="cP" type="number" step="0.1" min="0" placeholder="—"></div>
+      </div>
+      <div class="mrow">
+        <div class="mfield"><label>cos φ</label><input id="cCos" type="number" step="0.05" min="0.1" max="1"></div>
+        <div class="mfield"><label>Кс</label><input id="cKc" type="number" step="0.05" min="0" max="1"></div>
+      </div>
+      <div class="mfield"><label>Примечание (необязательно)</label><input id="cNote"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="ghost" onclick="closeCustom()">Отмена</button>
+        <button onclick="submitCustom()">Добавить нагрузку</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <h2>Результат: распределение по фазам</h2>
+    <div class="summary" id="phaseSummary"></div>
+    <div class="bar" id="phaseBar"></div>
+    <div style="margin-top:10px">Перекос фаз: <span id="imbalance" class="imbalance"></span>
+      <span class="muted" id="imbalanceNote"></span></div>
+    <div class="totals" id="totals" style="margin-top:14px"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="printReport()">📄 Печать / PDF (A4)</button>
+      <button class="ghost" onclick="exportResultExcel()">📊 Сохранить в Excel</button>
+    </div>
+  </div>
+
+  <div class="card" id="recCard" style="display:none">
+    <h2>Рекомендации по автоматам и кабелю</h2>
+    <div class="rec" id="recommend"></div>
+    <div id="groupRec"></div>
+    <p class="note" style="margin-top:14px">
+      ⚠️ Номиналы автоматов и сечения — ориентировочные, по стандартному ряду и ПУЭ табл. 1.3.4–1.3.7.
+      Сечение выбрано так, чтобы длительно допустимый ток жилы был не меньше номинала автомата.
+      Перед применением сверьте с проектными условиями (способ прокладки, t°, группировка, защита от КЗ).
+    </p>
+  </div>
+
+  </div><!-- /#main -->
+
+</div>
+
+<script src="config.js"></script>
+<script>
+// ===== Стандартные ряды и справочные таблицы =====
+const BREAKERS = [6,10,16,20,25,32,40,50,63,80,100,125,160,200,250];
+
+// Длительно допустимый ток, А (ориентировочно, ПУЭ табл. 1.3.4/1.3.6).
+// Ключ — сечение, мм². Значения — в трубе (3 жилы) и открыто/воздух.
+const CABLE = {
+  cu: {
+    pipe: {1.5:19, 2.5:25, 4:35, 6:42, 10:55, 16:75, 25:95, 35:120, 50:145, 70:180, 95:220, 120:260},
+    air:  {1.5:23, 2.5:30, 4:41, 6:50, 10:80, 16:100,25:140,35:170, 50:215, 70:270, 95:330, 120:385}
+  },
+  al: {
+    pipe: {2.5:19, 4:28, 6:32, 10:42, 16:60, 25:75, 35:90, 50:110, 70:140, 95:170, 120:200},
+    air:  {2.5:23, 4:31, 6:38, 10:60, 16:75, 25:105,35:130,50:165, 70:210, 95:255, 120:295}
+  }
+};
+
+let rowId = 0;
+let MODE = null;
+let lastResult = null; // последний расчёт (для экспорта в Excel/PDF)
+
+// ===== Группы нагрузок =====
+let GROUPS = [];        // [{id, name}]
+let groupCounter = 0;
+
+function groupName(id){ const g=GROUPS.find(x=>x.id===id); return g?g.name:''; }
+
+function addGroup(){
+  if(!MODE) return;
+  groupCounter++;
+  GROUPS.push({ id:'g'+groupCounter, name:'Группа '+(GROUPS.length+1) });
+  renderGroupBar();
+  refreshGroupSelectsAll();
+}
+
+function removeGroup(id){
+  GROUPS = GROUPS.filter(g=>g.id!==id);
+  // строки этой группы делаем отдельными
+  document.querySelectorAll('#loadBody .f-group').forEach(sel=>{ if(sel.value===id) sel.value=''; });
+  renderGroupBar();
+  refreshGroupSelectsAll();
+}
+
+function renameGroup(id, name){
+  const g=GROUPS.find(x=>x.id===id); if(g){ g.name=name; refreshGroupSelectsAll(); }
+}
+
+function renderGroupBar(){
+  const bar=document.getElementById('groupBar');
+  if(!GROUPS.length){ bar.innerHTML='<span class="muted" style="font-size:12px">Групп нет. «+ Группа» — создать; затем в строках выбрать группу в колонке «Группа».</span>'; return; }
+  bar.innerHTML = GROUPS.map(g=>`
+    <span class="gchip">
+      <span class="gdot"></span>
+      <input value="${escHtml(g.name)}" oninput="renameGroup('${g.id}', this.value)" title="Имя группы">
+      <button class="gx" onclick="removeGroup('${g.id}')" title="Удалить группу">✕</button>
+    </span>`).join('');
+}
+
+function groupOptionsHtml(selected){
+  let html='<option value="">— отдельно —</option>';
+  GROUPS.forEach(g=>{ html+=`<option value="${g.id}"${g.id===selected?' selected':''}>${escHtml(g.name)}</option>`; });
+  return html;
+}
+
+// перестроить выпадашки групп во всех строках, сохранив выбор
+function refreshGroupSelectsAll(){
+  document.querySelectorAll('#loadBody .f-group').forEach(sel=>{
+    const cur=sel.value;
+    sel.innerHTML=groupOptionsHtml(cur);
+    if(GROUPS.some(g=>g.id===cur)) sel.value=cur; else sel.value='';
+  });
+}
+
+// ===== Конфигурация режимов =====
+// справочники, загруженные из Excel (наполняются при импорте, кэшируются в браузере)
+const TABLES = { residential:[], industrial:[] };
+const SRC    = { residential:'', industrial:'' };
+const dirHandles = { residential:null, industrial:null }; // доступ к папке базы (если браузер умеет писать)
+const MYBASE = 'моя_база.xlsx'; // файл, куда программа дописывает свои варианты
+
+// ===== ОНЛАЙН-РЕЖИМ (PHP-API + вход) =====
+// Адрес API берётся из config.js (window.EC_API) или из параметра ссылки ?api=…
+// Пусто → офлайн (Excel-файлы/папка). Задан (напр. 'api') → онлайн.
+const ONLINE = { url: ((typeof window!=='undefined' && window.EC_API) || new URLSearchParams(location.search).get('api') || '').trim() };
+// Провайдер бэкенда определяется по адресу:
+//   'gas' — Google Apps Script (ссылка …/exec): общая база без входа.
+//   'php' — наш PHP-API (папка api): личные базы со входом по токену.
+ONLINE.provider = (ONLINE.url && (/script\.google\.com/i.test(ONLINE.url) || /\/exec\/?$/i.test(ONLINE.url))) ? 'gas' : 'php';
+function isOnline(){ return !!ONLINE.url; }
+function isGas(){ return ONLINE.provider==='gas'; }
+function apiUrl(file){ return ONLINE.url.replace(/\/+$/,'') + '/' + file; }
+
+// POST в Google Apps Script. Content-Type: text/plain делает запрос «простым»
+// (без CORS-preflight, который Apps Script не обрабатывает); сервер читает
+// сырое тело через e.postData.contents и разбирает JSON сам.
+async function gasPost(body){
+  const r = await fetch(ONLINE.url, {
+    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(body||{})
+  });
+  return r.json();
+}
+async function gasGet(params){
+  const sep = ONLINE.url.includes('?') ? '&' : '?';
+  const r = await fetch(ONLINE.url + sep + params);
+  return r.json();
+}
+
+let AUTH_TOKEN = lsGet('ec_token') || '';
+function setToken(t){ AUTH_TOKEN = t || ''; lsSet('ec_token', AUTH_TOKEN); }
+function authHeaders(extra){ const h = extra ? {...extra} : {}; if(AUTH_TOKEN) h['X-Token']=AUTH_TOKEN; return h; }
+
+async function apiGet(file){
+  const r = await fetch(apiUrl(file), { credentials:'same-origin', headers: authHeaders() });
+  if(r.status===401){ setToken(''); showAuth(); throw new Error('Требуется вход'); }
+  return r.json();
+}
+async function apiPost(file, body){
+  const r = await fetch(apiUrl(file), {
+    method:'POST', credentials:'same-origin',
+    headers: authHeaders({'Content-Type':'application/json'}), body: JSON.stringify(body||{})
+  });
+  if(r.status===401){ setToken(''); showAuth(); throw new Error('Требуется вход'); }
+  return r.json();
+}
+
+async function fetchBaseOnline(mode){
+  const json = isGas()
+    ? await gasGet('mode=' + encodeURIComponent(mode))
+    : await apiGet('loads.php?mode=' + mode);
+  if(!json.ok) throw new Error(json.error || 'ошибка сервера');
+  TABLES[mode] = json.rows || [];
+  SRC[mode] = 'онлайн-база';
+  lsSet('ec_tbl_'+mode, JSON.stringify(TABLES[mode]));
+  lsSet('ec_src_'+mode, SRC[mode]);
+  if(MODE===mode) refreshTableUI();
+  return TABLES[mode].length;
+}
+
+async function saveBaseOnline(mode, load){
+  const json = isGas()
+    ? await gasPost({ mode, load })
+    : await apiPost('loads.php', { mode, load });
+  if(!json.ok) throw new Error(json.error || 'ошибка сервера');
+  return isGas() ? 'добавлено в общую базу (Google Таблица)' : 'добавлено в общую онлайн-базу';
+}
+
+// ===== Авторизация (только онлайн) =====
+let CURRENT_USER = null;
+
+async function initOnline(){
+  if(!isOnline()) return;            // офлайн — вход не нужен
+  if(isGas()) return;                // Google-база общая: вход не нужен, экран выбора остаётся
+  document.getElementById('chooser').style.display='none';
+  try{
+    const me = await fetch(apiUrl('me.php'), {credentials:'same-origin', headers: authHeaders()}).then(r=>r.json());
+    if(me.ok && me.user) onAuthed(me.user); else showAuth();
+  }catch(e){ showAuth(); }
+}
+
+function showAuth(){
+  CURRENT_USER=null;
+  document.getElementById('main').style.display='none';
+  document.getElementById('chooser').style.display='none';
+  document.getElementById('userBar').style.display='none';
+  document.getElementById('authScreen').style.display='flex';
+}
+
+function onAuthed(user){
+  CURRENT_USER=user;
+  document.getElementById('authScreen').style.display='none';
+  document.getElementById('chooser').style.display='grid';
+  const ub=document.getElementById('userBar'); ub.style.display='flex';
+  document.getElementById('userEmail').textContent=user.email;
+  document.getElementById('adminLink').style.display = user.role==='admin' ? 'inline' : 'none';
+}
+
+function authTab(which){
+  document.getElementById('authLoginBtn').classList.toggle('active', which==='login');
+  document.getElementById('authRegBtn').classList.toggle('active', which==='reg');
+  document.getElementById('authSubmitBtn').textContent = which==='login' ? 'Войти' : 'Зарегистрироваться';
+  document.getElementById('authScreen').dataset.mode = which;
+  document.getElementById('authErr').textContent='';
+}
+
+async function authSubmit(ev){
+  if(ev && ev.preventDefault) ev.preventDefault();
+  const mode = document.getElementById('authScreen').dataset.mode || 'login';
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPass').value;
+  const err = document.getElementById('authErr');
+  err.textContent='';
+  if(!email || !password){ err.textContent='Введите email и пароль'; return; }
+  try{
+    // прямой fetch (не через apiPost): на входе 401 = неверный пароль, а не «сессия истекла»
+    const r = await fetch(apiUrl(mode==='login'?'login.php':'register.php'), {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, password})
+    });
+    let json=null; try{ json = await r.json(); }catch(_){}
+    if(!json){ err.textContent='Сервер вернул некорректный ответ'; return; }
+    if(!json.ok){ err.textContent = json.error || 'Ошибка входа'; return; }
+    setToken(json.token);
+    onAuthed(json.user);
+  }catch(e){ err.textContent='Сервер недоступен'; }
+}
+
+async function logout(){
+  try{ await apiPost('logout.php', {}); }catch(e){}
+  setToken('');
+  showAuth();
+}
+
+// показывать Excel-кнопки базы только в онлайн-режиме
+function updateBaseButtons(){
+  const on = isOnline();
+  const exp=document.getElementById('btnXlsxExport');
+  const imp=document.getElementById('btnXlsxImport');
+  const off=document.getElementById('btnFileOffline');
+  if(exp) exp.style.display = on?'':'none';
+  if(imp) imp.style.display = on?'':'none';
+  if(off) off.style.display = on?'none':'';
+}
+
+// выгрузить текущую онлайн-базу режима в Excel
+function exportBaseExcel(){
+  if(!MODE) return;
+  const rows = MODES[MODE].table();
+  if(!rows.length){ alert('База пуста — нечего выгружать.'); return; }
+  const fname = (MODE==='residential'?'база_дом':'база_промка')+'.xlsx';
+  downloadFile(fname, buildXlsx(rows));
+}
+
+// загрузить Excel в онлайн-базу (добавить / заменить)
+async function importBaseExcel(file){
+  if(!MODE) return;
+  if(!isOnline()){ alert('Загрузка Excel в базу доступна только в онлайн-режиме.'); return; }
+  let rows;
+  try{ rows = await readXlsx(await file.arrayBuffer()); }
+  catch(e){ alert('Не удалось прочитать Excel:\n'+e.message); return; }
+  if(!rows.length){ alert('В файле не найдено ни одной нагрузки. Проверьте заголовки столбцов и что данные со 2-й строки.'); return; }
+  const replace = confirm(
+    `Прочитано ${rows.length} нагрузок для «${MODES[MODE].title}».\n\n`+
+    `ОК — ЗАМЕНИТЬ всю базу этого режима данными из файла.\n`+
+    `Отмена — ДОБАВИТЬ их к текущей базе.`);
+  try{
+    const json = isGas()
+      ? await gasPost({ mode: MODE, loads: rows, replace })
+      : await apiPost('loads.php', { mode: MODE, loads: rows, replace });
+    if(!json.ok) throw new Error(json.error || 'ошибка сервера');
+    await fetchBaseOnline(MODE);
+    alert(`Готово: ${replace?'заменено':'добавлено'} ${json.inserted} нагрузок. В базе сейчас ${TABLES[MODE].length} позиц.`);
+  }catch(e){ alert('Ошибка загрузки в базу:\n'+e.message); }
+}
+
+const MODES = {
+  residential: {
+    ico:'🏢', title:'Жилой дом / квартира',
+    head:'Жилой дом / квартира. Считаем один объект (квартира или частный дом с гаражом и баней). Справочник нагрузок — Excel-файл tables/дом/справочник_дом.xlsx, дополняйте его вручную в Excel.',
+    defCos:0.95, defKc:0.7,
+    namePlaceholder:'Напр. Розетки кухня',
+    table: ()=> TABLES.residential
+  },
+  industrial: {
+    ico:'🏭', title:'Промышленный объект',
+    head:'Промышленный объект (станки, насосы, краны, грузовые лифты, сварка). Справочник нагрузок — Excel-файл tables/промка/справочник_промка.xlsx, дополняйте его вручную в Excel.',
+    defCos:0.8, defKc:0.5,
+    namePlaceholder:'Напр. Токарные станки',
+    table: ()=> TABLES.industrial
+  }
+};
+
+// безопасный доступ к localStorage (может быть запрещён в data:/file:/приватном режиме)
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
+// ===== Чтение .xlsx без внешних библиотек (ZIP + встроенный DecompressionStream) =====
+async function inflateRaw(u8){
+  const ds = new DecompressionStream('deflate-raw');
+  const stream = new Response(u8).body.pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function unzip(buf){
+  const dv = new DataView(buf);
+  const u8 = new Uint8Array(buf);
+  // ищем End Of Central Directory (0x06054b50) с конца
+  let eocd=-1;
+  for(let i=buf.byteLength-22; i>=0; i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } }
+  if(eocd<0) throw new Error('Не похоже на xlsx (ZIP не найден)');
+  let cdOff = dv.getUint32(eocd+16, true);
+  const cnt = dv.getUint16(eocd+10, true);
+  const entries = {};
+  const dec = new TextDecoder('utf-8');
+  let p = cdOff;
+  for(let n=0; n<cnt; n++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method = dv.getUint16(p+10, true);
+    const compSize = dv.getUint32(p+20, true);
+    const nameLen = dv.getUint16(p+28, true);
+    const extraLen = dv.getUint16(p+30, true);
+    const commentLen = dv.getUint16(p+32, true);
+    const lhOff = dv.getUint32(p+42, true);
+    const name = dec.decode(u8.subarray(p+46, p+46+nameLen));
+    // локальный заголовок, чтобы узнать смещение данных
+    const lhNameLen = dv.getUint16(lhOff+26, true);
+    const lhExtraLen = dv.getUint16(lhOff+28, true);
+    const dataStart = lhOff+30+lhNameLen+lhExtraLen;
+    entries[name] = { method, data: u8.subarray(dataStart, dataStart+compSize) };
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+async function readXlsx(buf){
+  const entries = unzip(buf);
+  const dec = new TextDecoder('utf-8');
+  async function text(name){
+    const e = entries[name]; if(!e) return null;
+    const bytes = e.method===0 ? e.data : await inflateRaw(e.data);
+    return dec.decode(bytes);
+  }
+  // общие строки (Excel хранит текст здесь)
+  let shared=[];
+  const sstXml = await text('xl/sharedStrings.xml');
+  if(sstXml){
+    const d = new DOMParser().parseFromString(sstXml,'application/xml');
+    shared = [...d.getElementsByTagName('si')].map(si=>
+      [...si.getElementsByTagName('t')].map(t=>t.textContent).join(''));
+  }
+  // первый лист
+  let wsName = Object.keys(entries).find(n=>/^xl\/worksheets\/sheet1\.xml$/i.test(n))
+            || Object.keys(entries).find(n=>/^xl\/worksheets\/.+\.xml$/i.test(n));
+  const wsXml = await text(wsName);
+  const d = new DOMParser().parseFromString(wsXml,'application/xml');
+
+  // собираем все строки как {буква_столбца: значение}
+  const rawRows=[];
+  for(const row of d.getElementsByTagName('row')){
+    const cell={};
+    for(const c of row.getElementsByTagName('c')){
+      const col=(c.getAttribute('r')||'').replace(/[0-9]/g,'');
+      const t=c.getAttribute('t'); let v='';
+      if(t==='inlineStr'){ const ts=c.getElementsByTagName('t'); v=ts.length?ts[0].textContent:''; }
+      else if(t==='s'){ const vv=c.getElementsByTagName('v')[0]; v=vv?(shared[+vv.textContent]||''):''; }
+      else { const vv=c.getElementsByTagName('v')[0]; v=vv?vv.textContent:''; }
+      cell[col]=v;
+    }
+    rawRows.push(cell);
+  }
+  if(!rawRows.length) return [];
+
+  // определяем столбцы по заголовкам (1-я строка)
+  const map = mapHeaders(rawRows[0]);
+  if(!map.name){ map.name='A'; map.type=map.type||'B'; map.p=map.p||'C'; map.cos=map.cos||'D'; map.kc=map.kc||'E'; }
+
+  const out=[];
+  let lastCat='';
+  for(let i=1;i<rawRows.length;i++){
+    const cell=rawRows[i];
+    const g=f=> map[f]? (cell[map[f]]||'').trim() : '';
+    let cat=g('category'); if(cat) lastCat=cat; else cat=lastCat;
+    const name=g('name');
+    if(!name) continue; // строка-раздел или пустая
+    const p=num1(g('p'));
+    const c=num1(g('cos'));
+    const kc=parseKc(g('kc'));
+    out.push({
+      name,
+      category: cat,
+      type: /3/.test(g('type')) ? '3' : '1',
+      p: p>0? p : 0,
+      cos: c>0? c : undefined,
+      kc: kc.val>0? kc.val : undefined,
+      kcRaw: kc.raw,
+      note: g('note')
+    });
+  }
+  return out;
+}
+
+// сопоставление столбцов по тексту заголовка
+function mapHeaders(h){
+  const m={};
+  for(const col in h){
+    const s=String(h[col]||'').toLowerCase().trim();
+    if(!s) continue;
+    if(!m.category && /категор|раздел|групп/.test(s)) m.category=col;
+    else if(!m.name && /(назван|наимен|электроприемн|электроприёмн|прибор|оборудован|нагрузк|^тип)/.test(s)) m.name=col;
+    else if(!m.type && /фаз/.test(s)) m.type=col;
+    else if(!m.p && /(мощн|квт|kw)/.test(s)) m.p=col;
+    else if(!m.cos && /(cos|косинус|коэф.*мощ)/.test(s)) m.cos=col;
+    else if(!m.kc && /(кс|спрос)/.test(s)) m.kc=col;
+    else if(!m.note && /(примеч|режим|коммент|описан)/.test(s)) m.note=col;
+  }
+  return m;
+}
+
+function num1(s){ const m=String(s==null?'':s).replace(',','.').match(/-?\d+(\.\d+)?/); return m?parseFloat(m[0]):0; }
+// Кс может быть числом или диапазоном «0.4 – 0.6» → берём середину, исходный текст сохраняем в raw
+function parseKc(s){
+  const str=String(s==null?'':s).replace(',','.');
+  const nums=str.match(/\d+(\.\d+)?/g);
+  if(!nums) return {val:0, raw:''};
+  if(nums.length>=2) return {val:(parseFloat(nums[0])+parseFloat(nums[1]))/2, raw:str.trim()};
+  return {val:parseFloat(nums[0]), raw:''};
+}
+
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// импорт Excel: читаем, кладём в TABLES, кэшируем
+async function importExcel(mode, file){
+  try{
+    const buf = await file.arrayBuffer();
+    const rows = await readXlsx(buf);
+    if(!rows.length){ alert('В файле не найдено ни одной нагрузки. Проверьте, что данные начинаются со 2-й строки.'); return; }
+    TABLES[mode] = rows;
+    SRC[mode] = file.name;
+    lsSet('ec_tbl_'+mode, JSON.stringify(rows));
+    lsSet('ec_src_'+mode, file.name);
+    if(MODE===mode) refreshTableUI();
+  }catch(e){
+    alert('Не удалось прочитать Excel-файл:\n'+e.message+'\n\nНужен браузер с поддержкой DecompressionStream (свежие Chrome/Edge/Firefox).');
+  }
+}
+
+// «Использовать базу»: пробуем доступ к папке (с правом записи), иначе — выбор папки только на чтение
+async function useBase(){
+  const mode=MODE;
+  // онлайн-режим: тянем базу из Google Таблицы
+  if(isOnline()){
+    const norm=document.getElementById('modeNorm');
+    norm.textContent='Загружаю онлайн-базу…';
+    try{ const n=await fetchBaseOnline(mode); if(MODE===mode && !TABLES[mode].length) norm.textContent='Онлайн-база пуста.'; }
+    catch(e){ alert('Не удалось загрузить онлайн-базу:\n'+e.message); refreshTableUI(); }
+    return;
+  }
+  if(window.showDirectoryPicker){
+    try{
+      const h = await window.showDirectoryPicker({id:'electrobase', mode:'readwrite'});
+      dirHandles[mode]=h;
+      const files=[];
+      for await (const e of h.values()){
+        if(e.kind==='file' && /\.xlsx$/i.test(e.name) && !/^~\$/.test(e.name)) files.push(await e.getFile());
+      }
+      await mergeFiles(mode, files, 'папка «'+h.name+'»');
+      return;
+    }catch(err){
+      if(err && err.name==='AbortError') return; // отменили выбор
+      // иначе — откатываемся к обычному выбору папки
+    }
+  }
+  document.getElementById('dirInput').click();
+}
+
+// фолбэк-обработчик webkitdirectory
+function importFolder(mode, fileList){ mergeFiles(mode, [...fileList]); }
+
+// объединение всех .xlsx из набора файлов в один справочник
+async function mergeFiles(mode, fileArr, label){
+  const files=fileArr.filter(f=>/\.xlsx$/i.test(f.name) && !/^~\$/.test(f.name));
+  if(!files.length){ alert('В выбранной папке не найдено .xlsx файлов.'); return; }
+  let all=[], okCount=0; const errs=[];
+  for(const f of files){
+    try{ all=all.concat(await readXlsx(await f.arrayBuffer())); okCount++; }
+    catch(e){ errs.push(f.name+': '+e.message); }
+  }
+  const seen=new Set(), merged=[];
+  for(const r of all){ const k=r.name.toLowerCase(); if(seen.has(k)) continue; seen.add(k); merged.push(r); }
+  if(!merged.length){ alert('Не удалось извлечь ни одной нагрузки из файлов папки.'); return; }
+  TABLES[mode]=merged;
+  SRC[mode]=label || `база: ${okCount} файл(ов)`;
+  lsSet('ec_tbl_'+mode, JSON.stringify(merged));
+  lsSet('ec_src_'+mode, SRC[mode]);
+  if(MODE===mode) refreshTableUI();
+  if(errs.length) alert('Часть файлов не прочитана:\n'+errs.join('\n'));
+}
+
+// ===== Запись .xlsx (ZIP без сжатия + CRC32), без внешних библиотек =====
+const CRC_TABLE=(()=>{ const t=[]; for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC_TABLE[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+
+function zipStore(parts){ // parts: [{name, data:Uint8Array}] → Uint8Array (метод 0/stored)
+  const u16=n=>[n&255,(n>>8)&255], u32=n=>[n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255];
+  const chunks=[]; const central=[]; let offset=0;
+  for(const p of parts){
+    const nm=new TextEncoder().encode(p.name), crc=crc32(p.data), sz=p.data.length;
+    const lh=[].concat(u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(sz),u32(sz),u16(nm.length),u16(0));
+    chunks.push(new Uint8Array(lh), nm, p.data);
+    central.push({nm,crc,sz,offset});
+    offset += lh.length + nm.length + sz;
+  }
+  const cStart=offset;
+  for(const c of central){
+    const ch=[].concat(u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(c.crc),u32(c.sz),u32(c.sz),u16(c.nm.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(c.offset));
+    chunks.push(new Uint8Array(ch), c.nm);
+    offset += ch.length + c.nm.length;
+  }
+  const eocd=[].concat(u32(0x06054b50),u16(0),u16(0),u16(central.length),u16(central.length),u32(offset-cStart),u32(cStart),u16(0));
+  chunks.push(new Uint8Array(eocd));
+  const total=chunks.reduce((s,c)=>s+c.length,0), out=new Uint8Array(total);
+  let q=0; for(const c of chunks){ out.set(c,q); q+=c.length; }
+  return out;
+}
+
+function buildXlsx(rows){
+  const E=new TextEncoder();
+  const headers=['Название','Фазы (1 или 3)','Мощность, кВт','cos φ','Кс','Категория','Примечание'];
+  const L=['A','B','C','D','E','F','G'];
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const txt=(c,r,v)=>`<c r="${c}${r}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+  const numC=(c,r,v)=>`<c r="${c}${r}"><v>${v}</v></c>`;
+  let sd='<row r="1">'+headers.map((h,i)=>txt(L[i],1,h)).join('')+'</row>';
+  rows.forEach((r,i)=>{
+    const rn=i+2, cells=[];
+    cells.push(txt('A',rn,r.name||''));
+    cells.push(numC('B',rn,r.type==='3'?3:1));
+    cells.push(r.p>0? numC('C',rn,r.p):'');
+    cells.push(r.cos>0? numC('D',rn,r.cos):'');
+    cells.push(r.kc>0? numC('E',rn,r.kc):'');
+    cells.push(r.category? txt('F',rn,r.category):'');
+    cells.push(r.note? txt('G',rn,r.note):'');
+    sd+=`<row r="${rn}">`+cells.join('')+'</row>';
+  });
+  const sheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+sd+'</sheetData></worksheet>';
+  const workbook='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Справочник" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  const wbRels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>';
+  const rootRels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  const ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>';
+  return zipStore([
+    {name:'[Content_Types].xml', data:E.encode(ct)},
+    {name:'_rels/.rels', data:E.encode(rootRels)},
+    {name:'xl/workbook.xml', data:E.encode(workbook)},
+    {name:'xl/_rels/workbook.xml.rels', data:E.encode(wbRels)},
+    {name:'xl/worksheets/sheet1.xml', data:E.encode(sheet)},
+  ]);
+}
+
+function downloadFile(name, bytes){
+  const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+}
+
+// сохранить свою нагрузку в базу (онлайн — в Google Таблицу, иначе — в файл моя_база.xlsx)
+async function saveToBase(mode, load){
+  if(isOnline()) return await saveBaseOnline(mode, load);
+  const h=dirHandles[mode];
+  if(h){
+    // прямая запись в папку: подтягиваем существующий файл, дописываем строку, перезаписываем
+    let rows=[];
+    try{
+      const fh=await h.getFileHandle(MYBASE,{create:false});
+      rows=await readXlsx(await (await fh.getFile()).arrayBuffer());
+    }catch(e){ /* файла ещё нет */ }
+    rows.push(load);
+    const fh=await h.getFileHandle(MYBASE,{create:true});
+    const w=await fh.createWritable(); await w.write(buildXlsx(rows)); await w.close();
+    return `записано в «${MYBASE}» в папке базы (всего своих: ${rows.length})`;
+  } else {
+    // фолбэк: копим в localStorage и отдаём файл на скачивание
+    let rows=[]; try{ rows=JSON.parse(lsGet('ec_custom_'+mode)||'[]'); }catch(e){}
+    rows.push(load);
+    lsSet('ec_custom_'+mode, JSON.stringify(rows));
+    downloadFile(MYBASE, buildXlsx(rows));
+    return `скачан файл «${MYBASE}» (всего своих: ${rows.length}) — положите его в папку базы`;
+  }
+}
+
+// ===== Модальное окно «свой вариант» =====
+function openCustom(){
+  if(!MODE) return;
+  const cfg=MODES[MODE];
+  cName.value=''; cCat.value=''; cType.value='1'; cP.value='';
+  cCos.value=cfg.defCos; cKc.value=cfg.defKc; cNote.value='';
+  document.getElementById('customModal').style.display='flex';
+  cName.focus();
+}
+function closeCustom(){ document.getElementById('customModal').style.display='none'; }
+
+async function submitCustom(){
+  const name=cName.value.trim();
+  if(!name){ alert('Укажите название нагрузки.'); cName.focus(); return; }
+  const load={
+    name,
+    category: cCat.value.trim(),
+    type: cType.value==='3'?'3':'1',
+    p: parseFloat(cP.value)||0,
+    cos: parseFloat(cCos.value)||undefined,
+    kc: parseFloat(cKc.value)||undefined,
+    note: cNote.value.trim()
+  };
+  // добавляем строку в расчёт
+  addRow({name:load.name, type:load.type, p:load.p, cos:load.cos, kc:load.kc, qty:1, note:load.note});
+  // добавляем в текущий справочник, чтобы сразу было в списке
+  TABLES[MODE].push(load); refreshTableUI();
+  closeCustom();
+  // спрашиваем про базу
+  if(confirm('Сохранить нагрузку в базу?')){
+    try{
+      const msg=await saveToBase(MODE, load);
+      alert('Сохранено: '+msg);
+    }catch(e){
+      alert('Не удалось сохранить в базу:\n'+e.message);
+    }
+  }
+}
+
+function loadCachedTables(){
+  ['residential','industrial'].forEach(m=>{
+    const raw = lsGet('ec_tbl_'+m);
+    if(raw){ try{ TABLES[m]=JSON.parse(raw); SRC[m]=lsGet('ec_src_'+m)||''; }catch(e){} }
+  });
+}
+
+// обновляет выпадающий список (с группировкой по категориям) и строку статуса
+function refreshTableUI(){
+  const tbl = MODES[MODE].table();
+  const sel = document.getElementById('presetPick');
+  let html='<option value="">+ Из справочника…</option>';
+  const groups={};
+  tbl.forEach((r,i)=>{ const g=r.category||''; (groups[g]=groups[g]||[]).push(i); });
+  const optText=(r)=>{
+    const meta=[];
+    if(r.p>0) meta.push(r.p+' кВт');
+    const k = r.kcRaw || (r.kc!=null? r.kc : '');
+    if(k!=='') meta.push('Кс '+k);
+    return escHtml(r.name) + (meta.length?` (${escHtml(meta.join(', '))})`:'');
+  };
+  for(const g in groups){
+    const items = groups[g].map(i=>`<option value="${i}" title="${escHtml(tbl[i].note||'')}">${optText(tbl[i])}</option>`).join('');
+    html += g ? `<optgroup label="${escHtml(g)}">${items}</optgroup>` : items;
+  }
+  sel.innerHTML = html;
+  const norm = document.getElementById('modeNorm');
+  if(tbl.length){
+    norm.textContent = `Справочник: ${tbl.length} позиц.` + (SRC[MODE]?` (${SRC[MODE]})`:'');
+  }else{
+    norm.textContent = 'Справочник не загружен — «📂 Загрузить файл» или «🗂 Использовать базу (папку)».';
+  }
+}
+
+function setMode(m){
+  MODE = m;
+  const cfg = MODES[m];
+  document.getElementById('chooser').style.display='none';
+  document.getElementById('main').style.display='';
+  document.getElementById('modeIco').textContent = cfg.ico;
+  document.getElementById('modeTitle').textContent = cfg.title;
+  document.getElementById('headSub').textContent = cfg.head;
+  refreshTableUI();
+  updateBaseButtons();
+  // сброс групп
+  GROUPS=[]; groupCounter=0; renderGroupBar();
+  // свежая таблица с одной строкой и дефолтами режима
+  document.getElementById('loadBody').innerHTML='';
+  document.getElementById('resultCard').style.display='none';
+  document.getElementById('recCard').style.display='none';
+  addRow();
+  // онлайн-режим: подтягиваем актуальную базу из облака автоматически
+  if(isOnline()){
+    document.getElementById('modeNorm').textContent='Загружаю онлайн-базу…';
+    fetchBaseOnline(m).catch(()=>{ if(MODE===m) refreshTableUI(); });
+  }
+}
+
+function addFromPreset(){
+  const sel = document.getElementById('presetPick');
+  const i = sel.value;
+  if(i==='') return;
+  const r = MODES[MODE].table()[+i];
+  addRow({name:r.name, type:r.type, p:r.p, cos:r.cos, kc:r.kc, qty:1, note:r.note});
+  sel.value='';
+}
+
+function changeMode(){
+  document.getElementById('main').style.display='none';
+  document.getElementById('chooser').style.display='grid';
+  document.getElementById('headSub').textContent = 'Выберите тип объекта, чтобы начать.';
+  MODE = null;
+}
+
+function addRow(data){
+  data = data || {};
+  const cfg = MODE ? MODES[MODE] : {defCos:0.9, defKc:1, namePlaceholder:'Название нагрузки'};
+  rowId++;
+  const tr = document.createElement('tr');
+  tr.dataset.id = rowId;
+  tr.innerHTML = `
+    <td><input type="text" class="f-name" value="${escHtml(data.name||'')}" placeholder="${cfg.namePlaceholder}"${data.note?` title="${escHtml(data.note)}"`:''}></td>
+    <td><select class="f-group">${groupOptionsHtml(data.group||'')}</select></td>
+    <td>
+      <select class="f-type">
+        <option value="1" ${data.type==='3'?'':'selected'}>1-фазная</option>
+        <option value="3" ${data.type==='3'?'selected':''}>3-фазная</option>
+      </select>
+    </td>
+    <td class="num"><input type="number" class="f-p" value="${data.p>0?data.p:''}" step="0.1" min="0" placeholder="—"></td>
+    <td class="num"><input type="number" class="f-cos" value="${data.cos??cfg.defCos}" step="0.05" min="0.1" max="1"></td>
+    <td class="num"><input type="number" class="f-kc" value="${data.kc??cfg.defKc}" step="0.05" min="0" max="1"></td>
+    <td class="num"><input type="number" class="f-qty" value="${data.qty??1}" step="1" min="1"></td>
+    <td class="right f-pr muted">—</td>
+    <td class="f-phase">—</td>
+    <td><button class="danger" onclick="this.closest('tr').remove()">✕</button></td>
+  `;
+  document.getElementById('loadBody').appendChild(tr);
+}
+
+function clearAll(){
+  GROUPS=[]; groupCounter=0; renderGroupBar();
+  document.getElementById('loadBody').innerHTML='';
+  document.getElementById('resultCard').style.display='none';
+  document.getElementById('recCard').style.display='none';
+  addRow();
+}
+
+function loadDemo(){
+  if(!MODE) return;
+  document.getElementById('loadBody').innerHTML='';
+  MODES[MODE].table().forEach(d=>addRow({name:d.name, type:d.type, p:d.p, cos:d.cos, kc:d.kc, qty:1}));
+  calculate();
+}
+
+// ===== Сбор данных =====
+function readLoads(){
+  const rows = [...document.querySelectorAll('#loadBody tr')];
+  const loads = [];
+  rows.forEach(tr=>{
+    const name = tr.querySelector('.f-name').value.trim() || 'Без названия';
+    const type = tr.querySelector('.f-type').value;
+    const p = parseFloat(tr.querySelector('.f-p').value)||0;
+    const cos = parseFloat(tr.querySelector('.f-cos').value)||0.9;
+    const kc = parseFloat(tr.querySelector('.f-kc').value);
+    const qty = Math.max(1, parseInt(tr.querySelector('.f-qty').value)||1);
+    const gsel = tr.querySelector('.f-group');
+    let group = gsel ? gsel.value : '';
+    if(group && !GROUPS.some(g=>g.id===group)) group='';
+    if(p<=0) { tr.querySelector('.f-pr').textContent='—'; tr.querySelector('.f-phase').innerHTML='—'; return; }
+    const kcv = isNaN(kc)?1:kc;
+    loads.push({tr, name, type, p, cos, kc:kcv, qty, pr:p*kcv*qty, group});
+  });
+  return loads;
+}
+
+const NAMES=['A','B','C'];
+function breakerFor(i){ return BREAKERS.find(b=>b>=i) || BREAKERS[BREAKERS.length-1]; }
+function phaseBadges(label){
+  if(!label || label==='—') return '—';
+  return label.split(/\s*[,+]\s*/).filter(Boolean)
+    .map(tok=>`<span class="badge ${tok[0]}">${tok}</span>`).join(' ');
+}
+
+// ===== Балансировка фаз с учётом групп =====
+function calculate(){
+  const uLine = parseFloat(document.getElementById('uLine').value)||400;
+  const uPhase = parseFloat(document.getElementById('uPhase').value)||230;
+  const loads = readLoads();
+  if(loads.length===0){ alert('Добавьте хотя бы одну нагрузку с мощностью > 0'); return; }
+
+  const phase = {A:{p:0,i:0}, B:{p:0,i:0}, C:{p:0,i:0}};
+  const S = L => L.pr*1000/(L.cos||0.9);          // полная мощность нагрузки, ВА
+  const I1 = L => S(L)/uPhase;                     // полный ток 1ф
+  const I3 = L => S(L)/(Math.sqrt(3)*uLine);       // ток на фазу для 3ф
+
+  // разложить на группы и отдельные
+  const groupsMap = {};   // id -> {id,name,loads,p,S,has3}
+  const singles = [];
+  loads.forEach(L=>{
+    if(L.group){
+      const g = groupsMap[L.group] || (groupsMap[L.group]={id:L.group, name:groupName(L.group), loads:[], p:0, S:0, has3:false});
+      g.loads.push(L); g.p+=L.pr; g.S+=S(L); if(L.type==='3') g.has3=true;
+    } else singles.push(L);
+  });
+
+  const groupRes={};                 // id -> {type,p,i,phaseLabel}
+  const placeUnits=[];               // одно-фазные блоки для жадного размещения
+  const singleUnitMap=new Map();     // L(1ф отдельная) -> [фазы по единицам]
+
+  // 3ф группы — раскидываем по всем фазам
+  Object.values(groupsMap).forEach(g=>{
+    if(g.has3){
+      const iph=g.S/(Math.sqrt(3)*uLine);
+      NAMES.forEach(n=>{ phase[n].p+=g.p/3; phase[n].i+=iph; });
+      groupRes[g.id]={type:'3', p:g.p, i:iph, phaseLabel:'A+B+C'};
+    } else {
+      placeUnits.push({kind:'group', g, p:g.p, i:g.S/uPhase});
+    }
+  });
+
+  // отдельные нагрузки
+  singles.forEach(L=>{
+    if(L.type==='3'){
+      const iph=I3(L);
+      NAMES.forEach(n=>{ phase[n].p+=L.pr/3; phase[n].i+=iph; });
+    } else {
+      const iEach=I1(L)/L.qty, pEach=L.pr/L.qty;
+      for(let k=0;k<L.qty;k++) placeUnits.push({kind:'load', L, p:pEach, i:iEach});
+    }
+  });
+
+  // жадное размещение 1ф блоков (групп и единиц отдельных нагрузок) по наименее загруженной фазе
+  placeUnits.sort((a,b)=>b.i-a.i);
+  placeUnits.forEach(u=>{
+    let best='A'; NAMES.forEach(n=>{ if(phase[n].i<phase[best].i) best=n; });
+    phase[best].p+=u.p; phase[best].i+=u.i;
+    if(u.kind==='group') groupRes[u.g.id]={type:'1', p:u.g.p, i:u.i, phaseLabel:best};
+    else { let arr=singleUnitMap.get(u.L); if(!arr){arr=[]; singleUnitMap.set(u.L,arr);} arr.push(best); }
+  });
+
+  // подписываем фазы в таблице и собираем строки для экспорта
+  const exportRows=[];
+  loads.forEach(L=>{
+    L.tr.querySelector('.f-pr').textContent = L.pr.toFixed(2);
+    L.tr.querySelector('.f-pr').classList.remove('muted');
+    let phaseLabel;
+    if(L.group && groupRes[L.group]) phaseLabel = groupRes[L.group].phaseLabel;
+    else if(L.type==='3') phaseLabel='A+B+C';
+    else {
+      const counts={A:0,B:0,C:0};
+      (singleUnitMap.get(L)||[]).forEach(x=>counts[x]++);
+      phaseLabel = NAMES.filter(n=>counts[n]>0).map(n=>n+(counts[n]>1?'×'+counts[n]:'')).join(', ');
+    }
+    L.tr.querySelector('.f-phase').innerHTML = phaseBadges(phaseLabel);
+    exportRows.push({name:L.name, type:L.type, p:L.p, cos:L.cos, kc:L.kc, qty:L.qty, pr:L.pr,
+                     phaseLabel, group:L.group, groupName:L.group?groupName(L.group):''});
+  });
+
+  // сводка по группам и отдельным нагрузкам (для рекомендаций)
+  const groupsList = Object.values(groupsMap).map(g=>{
+    const r=groupRes[g.id];
+    return {name:g.name, count:g.loads.length, type:r.type, p:r.p, i:r.i, phaseLabel:r.phaseLabel, brk:breakerFor(r.i)};
+  });
+  const singlesList = singles.map(L=>{
+    const i = L.type==='3'? I3(L) : I1(L);
+    const phaseLabel = L.type==='3'? 'A+B+C'
+      : (()=>{ const c={A:0,B:0,C:0}; (singleUnitMap.get(L)||[]).forEach(x=>c[x]++); return NAMES.filter(n=>c[n]>0).map(n=>n+(c[n]>1?'×'+c[n]:'')).join(', '); })();
+    return {name:L.name, type:L.type, p:L.pr, i, phaseLabel, brk:breakerFor(L.type==='3'?i:i)};
+  });
+
+  renderResults(phase, exportRows, uLine, uPhase, groupsList, singlesList);
+}
+
+function renderResults(phase, loads, uLine, uPhase, groupsList, singlesList){
+  const names=['A','B','C'];
+  // сводка по фазам
+  const sum = document.getElementById('phaseSummary');
+  sum.innerHTML = names.map(n=>`
+    <div class="pbox ${n}">
+      <div class="t">Фаза ${n}</div>
+      <div class="v phase${n}">${phase[n].p.toFixed(2)} кВт</div>
+      <div class="s">ток ≈ ${phase[n].i.toFixed(1)} А</div>
+    </div>`).join('');
+
+  // полоса распределения по току
+  const totI = phase.A.i+phase.B.i+phase.C.i || 1;
+  const colors={A:'var(--a)',B:'var(--b)',C:'var(--c)'};
+  document.getElementById('phaseBar').innerHTML = names.map(n=>
+    `<div style="width:${phase[n].i/totI*100}%;background:${colors[n]}" title="Фаза ${n}: ${phase[n].i.toFixed(1)} А"></div>`).join('');
+
+  // перекос по току: (Imax - Imin)/Imax
+  const iVals = names.map(n=>phase[n].i);
+  const imax = Math.max(...iVals), imin = Math.min(...iVals);
+  const imb = imax>0 ? (imax-imin)/imax*100 : 0;
+  const el = document.getElementById('imbalance');
+  el.textContent = imb.toFixed(1)+' %';
+  el.className = 'imbalance ' + (imb<15?'good':imb<30?'warn':'bad');
+  document.getElementById('imbalanceNote').textContent =
+    imb<15? '— хорошо, в пределах нормы' : imb<30? '— приемлемо, можно улучшить' : '— большой перекос, проверьте нагрузки';
+
+  // итоги
+  const totPr = loads.reduce((s,L)=>s+L.pr,0);
+  const totPinst = loads.reduce((s,L)=>s+L.p*L.qty,0);
+  document.getElementById('totals').innerHTML = `
+    <div class="it">Установленная мощность<b>${totPinst.toFixed(2)} кВт</b></div>
+    <div class="it">Расчётная мощность (ΣКс·P)<b>${totPr.toFixed(2)} кВт</b></div>
+    <div class="it">Макс. ток фазы<b>${imax.toFixed(1)} А</b></div>`;
+
+  document.getElementById('resultCard').style.display='';
+
+  // рекомендации: вводной автомат + групповые
+  const rec = recommend(imax, groupsList, singlesList);
+
+  // сохраняем результат для экспорта (Excel / PDF)
+  lastResult = {
+    modeTitle: MODES[MODE].title,
+    date: new Date().toLocaleString('ru-RU'),
+    uLine, uPhase,
+    rows: loads,
+    groups: groupsList||[], singles: singlesList||[],
+    phase: { A:{...phase.A}, B:{...phase.B}, C:{...phase.C} },
+    totPinst, totPr, iMax:imax, imb,
+    breaker: rec.brk, cableTxt: rec.cableTxt,
+    cableInfo: rec.matTxt+', '+rec.layTxt+' · '+rec.cableSub
+  };
+}
+
+function recommend(iMax, groupsList, singlesList){
+  const mat = document.getElementById('cableMat').value;
+  const lay = document.getElementById('cableLay').value;
+
+  // вводной автомат: ближайший стандартный номинал >= iMax (3-полюсный)
+  const brk = BREAKERS.find(b=>b>=iMax) || BREAKERS[BREAKERS.length-1];
+
+  // кабель ввода: сечение, чьё Iдоп >= номинал автомата
+  const tab = CABLE[mat][lay];
+  let pick=null;
+  for(const s of Object.keys(tab).map(Number).sort((a,b)=>a-b)){
+    if(tab[s]>=brk){ pick={s, idop:tab[s]}; break; }
+  }
+  const cableTxt = pick ? `${pick.s} мм²` : '> макс. в таблице';
+  const cableSub = pick ? `Iдоп ≈ ${pick.idop} А ≥ ${brk} А` : 'требуется кабель большего сечения';
+  const matTxt = mat==='cu'?'медь':'алюминий';
+  const layTxt = lay==='pipe'?'в трубе, 3 жилы':'открыто/воздух';
+
+  document.getElementById('recommend').innerHTML = `
+    <div class="ri">
+      <div class="t">Вводной автомат (3-полюсный)</div>
+      <div class="v">${brk} А</div>
+      <div class="s">по макс. фазе Iрасч ≈ ${iMax.toFixed(1)} А</div>
+    </div>
+    <div class="ri">
+      <div class="t">Кабель ввода</div>
+      <div class="v">${cableTxt}</div>
+      <div class="s">${matTxt}, ${layTxt} · ${cableSub}</div>
+    </div>`;
+
+  // таблица групповых автоматов и отдельных нагрузок
+  const units = []
+    .concat((groupsList||[]).map(g=>({kind:'Группа', name:g.name, type:g.type, p:g.p, i:g.i, phaseLabel:g.phaseLabel, brk:g.brk, count:g.count})))
+    .concat((singlesList||[]).map(s=>({kind:'Нагрузка', name:s.name, type:s.type, p:s.p, i:s.i, phaseLabel:s.phaseLabel, brk:s.brk, count:0})));
+  const gr = document.getElementById('groupRec');
+  if(units.length){
+    gr.innerHTML = `
+      <h3 style="font-size:14px;margin:18px 0 8px;color:var(--accent)">Групповые автоматы</h3>
+      <table style="font-size:13px">
+        <thead><tr>
+          <th>Что</th><th>Полюсность</th><th class="right">Расч. мощн., кВт</th>
+          <th class="right">Ток, А</th><th>Фаза</th><th class="right">Автомат, А</th>
+        </tr></thead>
+        <tbody>
+          ${units.map(u=>`<tr>
+            <td>${escHtml(u.name)}${u.kind==='Группа'?` <span class="muted">(группа, ${u.count})</span>`:''}</td>
+            <td>${u.type==='3'?'3-пол.':'1-пол.'}</td>
+            <td class="right">${u.p.toFixed(2)}</td>
+            <td class="right">${u.i.toFixed(1)}</td>
+            <td>${phaseBadges(u.phaseLabel)}</td>
+            <td class="right"><b>${u.brk}</b></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } else gr.innerHTML='';
+
+  document.getElementById('recCard').style.display='';
+  return { brk, cableTxt, matTxt, layTxt, cableSub };
+}
+
+// ===== Экспорт результата в Excel / PDF =====
+const _r2=v=> (typeof v==='number' && isFinite(v) ? Math.round(v*100)/100 : v);
+const _r1=v=> (typeof v==='number' && isFinite(v) ? Math.round(v*10)/10 : v);
+
+// собрать .xlsx из 2D-массива (число → число, иначе текст)
+function buildXlsxGrid(aoa){
+  const E=new TextEncoder();
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const colL=n=>{ let s=''; n++; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-m-1)/26);} return s; };
+  let sd='';
+  aoa.forEach((row,ri)=>{
+    const rn=ri+1; let cells='';
+    row.forEach((val,ci)=>{
+      const ref=colL(ci)+rn;
+      if(typeof val==='number' && isFinite(val)) cells+=`<c r="${ref}"><v>${val}</v></c>`;
+      else cells+=`<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${esc(val==null?'':val)}</t></is></c>`;
+    });
+    sd+=`<row r="${rn}">${cells}</row>`;
+  });
+  const sheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+sd+'</sheetData></worksheet>';
+  const workbook='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Расчёт" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  const wbRels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>';
+  const rootRels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  const ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>';
+  return zipStore([
+    {name:'[Content_Types].xml', data:E.encode(ct)},
+    {name:'_rels/.rels', data:E.encode(rootRels)},
+    {name:'xl/workbook.xml', data:E.encode(workbook)},
+    {name:'xl/_rels/workbook.xml.rels', data:E.encode(wbRels)},
+    {name:'xl/worksheets/sheet1.xml', data:E.encode(sheet)},
+  ]);
+}
+
+function exportResultExcel(){
+  if(!lastResult){ alert('Сначала выполните расчёт.'); return; }
+  const R=lastResult, a=[];
+  a.push(['Расчёт электрических нагрузок']);
+  a.push(['Объект', R.modeTitle]);
+  a.push(['Дата', R.date]);
+  a.push(['Напряжение', 'линейное '+R.uLine+' В / фазное '+R.uPhase+' В']);
+  a.push([]);
+  a.push(['№','Название','Группа','Число фаз','Мощность, кВт','cos φ','Кс','Кол-во','Расч. мощн., кВт','Фаза']);
+  R.rows.forEach((r,i)=> a.push([i+1, r.name, r.groupName||'отдельно', (r.type==='3'?3:1), _r2(r.p), _r2(r.cos), _r2(r.kc), r.qty, _r2(r.pr), r.phaseLabel]));
+  a.push([]);
+  a.push(['Фаза','Расч. мощность, кВт','Ток, А']);
+  ['A','B','C'].forEach(n=> a.push([n, _r2(R.phase[n].p), _r1(R.phase[n].i)]));
+  a.push([]);
+  a.push(['Установленная мощность, кВт', _r2(R.totPinst)]);
+  a.push(['Расчётная мощность, кВт', _r2(R.totPr)]);
+  a.push(['Макс. ток фазы, А', _r1(R.iMax)]);
+  a.push(['Перекос фаз, %', _r1(R.imb)]);
+  a.push(['Вводной автомат, А', R.breaker]);
+  a.push(['Кабель ввода', R.cableTxt+' ('+R.cableInfo+')']);
+  const units=(R.groups||[]).map(g=>['Группа: '+g.name, (g.type==='3'?'3-пол.':'1-пол.'), _r2(g.p), _r1(g.i), g.phaseLabel, g.brk])
+    .concat((R.singles||[]).map(s=>['Нагрузка: '+s.name, (s.type==='3'?'3-пол.':'1-пол.'), _r2(s.p), _r1(s.i), s.phaseLabel, s.brk]));
+  if(units.length){
+    a.push([]);
+    a.push(['Групповые автоматы:']);
+    a.push(['Что','Полюсность','Расч. мощн., кВт','Ток, А','Фаза','Автомат, А']);
+    units.forEach(u=> a.push(u));
+  }
+  downloadFile('расчёт_нагрузок.xlsx', buildXlsxGrid(a));
+}
+
+function buildPrintHtml(R){
+  const e=escHtml;
+  const rows=R.rows.map((r,i)=>`<tr><td class="r">${i+1}</td><td>${e(r.name)}</td><td>${e(r.groupName||'—')}</td><td class="r">${r.type==='3'?3:1}</td><td class="r">${_r2(r.p)}</td><td class="r">${_r2(r.cos)}</td><td class="r">${_r2(r.kc)}</td><td class="r">${r.qty}</td><td class="r">${_r2(r.pr)}</td><td>${e(r.phaseLabel)}</td></tr>`).join('');
+  const units=(R.groups||[]).map(g=>({n:'Группа: '+g.name, pol:g.type==='3'?'3-пол.':'1-пол.', p:g.p, i:g.i, ph:g.phaseLabel, brk:g.brk}))
+    .concat((R.singles||[]).map(s=>({n:'Нагрузка: '+s.name, pol:s.type==='3'?'3-пол.':'1-пол.', p:s.p, i:s.i, ph:s.phaseLabel, brk:s.brk})));
+  const groupTable = units.length ? `
+    <h2>Групповые автоматы</h2>
+    <table>
+      <thead><tr><th>Что</th><th>Полюс.</th><th class="r">Расч., кВт</th><th class="r">Ток, А</th><th>Фаза</th><th class="r">Автомат, А</th></tr></thead>
+      <tbody>${units.map(u=>`<tr><td>${e(u.n)}</td><td>${u.pol}</td><td class="r">${_r2(u.p)}</td><td class="r">${_r1(u.i)}</td><td>${e(u.ph)}</td><td class="r">${u.brk}</td></tr>`).join('')}</tbody>
+    </table>` : '';
+  return `
+    <h1>Расчёт электрических нагрузок</h1>
+    <div class="sub">Объект: ${e(R.modeTitle)} &nbsp;·&nbsp; ${e(R.date)} &nbsp;·&nbsp; напряжение ${R.uLine}/${R.uPhase} В</div>
+    <table>
+      <thead><tr><th class="r">№</th><th>Название</th><th>Группа</th><th class="r">Фаз</th><th class="r">Мощн., кВт</th><th class="r">cos φ</th><th class="r">Кс</th><th class="r">Кол.</th><th class="r">Расч., кВт</th><th>Фаза</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <h2>Распределение по фазам</h2>
+    <table>
+      <thead><tr><th>Фаза</th><th class="r">Расч. мощность, кВт</th><th class="r">Ток, А</th></tr></thead>
+      <tbody>
+        <tr><td>A</td><td class="r">${_r2(R.phase.A.p)}</td><td class="r">${_r1(R.phase.A.i)}</td></tr>
+        <tr><td>B</td><td class="r">${_r2(R.phase.B.p)}</td><td class="r">${_r1(R.phase.B.i)}</td></tr>
+        <tr><td>C</td><td class="r">${_r2(R.phase.C.p)}</td><td class="r">${_r1(R.phase.C.i)}</td></tr>
+      </tbody>
+    </table>
+    <div class="grid">
+      <div>Установленная мощность<b>${_r2(R.totPinst)} кВт</b></div>
+      <div>Расчётная мощность<b>${_r2(R.totPr)} кВт</b></div>
+      <div>Макс. ток фазы<b>${_r1(R.iMax)} А</b></div>
+      <div>Перекос фаз<b>${_r1(R.imb)} %</b></div>
+    </div>
+    ${groupTable}
+    <h2>Вводной автомат и кабель</h2>
+    <div class="grid">
+      <div>Вводной автомат (3-пол.)<b>${R.breaker} А</b></div>
+      <div>Кабель ввода<b>${e(R.cableTxt)}</b></div>
+    </div>
+    <div class="sub" style="margin-top:6px">${e(R.cableInfo)}</div>
+    <div class="foot">Номиналы и сечения — ориентировочные (стандартный ряд, ПУЭ). Перед применением сверьте с проектными условиями.</div>`;
+}
+
+function printReport(){
+  if(!lastResult){ alert('Сначала выполните расчёт.'); return; }
+  document.getElementById('printArea').innerHTML = buildPrintHtml(lastResult);
+  window.print();
+}
+
+// добавить пустую строку и поставить курсор в её название
+function addEmptyRow(){
+  addRow();
+  const rows=document.querySelectorAll('#loadBody tr');
+  rows[rows.length-1].querySelector('.f-name').focus();
+}
+
+// ===== Живой поиск по базе в поле «Название» =====
+let acRow=null, acItems=[], acIndex=-1;
+
+function acHide(){ document.getElementById('acBox').style.display='none'; acItems=[]; acIndex=-1; acRow=null; }
+
+function acShow(input){
+  if(!MODE){ acHide(); return; }
+  const q=input.value.trim().toLowerCase();
+  const box=document.getElementById('acBox');
+  if(!q){ acHide(); return; }
+  const tbl=MODES[MODE].table();
+  acItems=tbl.filter(r=> r.name.toLowerCase().includes(q) ||
+                         (r.category && r.category.toLowerCase().includes(q))).slice(0,40);
+  if(!acItems.length){ acHide(); return; }
+  acRow=input.closest('tr'); acIndex=-1;
+  box.innerHTML=acItems.map((r,i)=>{
+    const meta=[]; if(r.p>0) meta.push(r.p+' кВт');
+    const k=r.kcRaw||(r.kc!=null?r.kc:''); if(k!=='') meta.push('Кс '+k);
+    return `<div class="it" data-i="${i}"><span class="nm">${escHtml(r.name)}</span>`+
+      (r.category?`<span class="cat">${escHtml(r.category)}</span>`:'')+
+      (meta.length?`<span class="meta">${escHtml(meta.join(', '))}</span>`:'')+`</div>`;
+  }).join('');
+  const rect=input.getBoundingClientRect();
+  box.style.left=rect.left+'px';
+  box.style.top=(rect.bottom+2)+'px';
+  box.style.minWidth=rect.width+'px';
+  box.style.display='block';
+}
+
+function acFill(r){
+  if(!acRow) return;
+  acRow.querySelector('.f-name').value=r.name;
+  acRow.querySelector('.f-type').value=(r.type==='3')?'3':'1';
+  if(r.p>0)   acRow.querySelector('.f-p').value=r.p;
+  if(r.cos>0) acRow.querySelector('.f-cos').value=r.cos;
+  if(r.kc>0)  acRow.querySelector('.f-kc').value=r.kc;
+  if(r.note)  acRow.querySelector('.f-name').title=r.note;
+  const pInput=acRow.querySelector('.f-p');
+  acHide();
+  pInput.focus();
+}
+
+function acMove(d){
+  const its=[...document.querySelectorAll('#acBox .it')];
+  if(!its.length) return;
+  if(acIndex>=0 && its[acIndex]) its[acIndex].classList.remove('sel');
+  acIndex=(acIndex+d+its.length)%its.length;
+  its[acIndex].classList.add('sel');
+  its[acIndex].scrollIntoView({block:'nearest'});
+}
+
+// привязка событий поиска (делегирование на теле таблицы)
+const _lb=document.getElementById('loadBody');
+_lb.addEventListener('input', e=>{ if(e.target.classList.contains('f-name')) acShow(e.target); });
+_lb.addEventListener('keydown', e=>{
+  if(!e.target.classList.contains('f-name')) return;
+  if(document.getElementById('acBox').style.display==='none') return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); acMove(1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); acMove(-1); }
+  else if(e.key==='Enter'){ if(acIndex>=0){ e.preventDefault(); acFill(acItems[acIndex]); } }
+  else if(e.key==='Escape'){ acHide(); }
+});
+document.getElementById('acBox').addEventListener('mousedown', e=>{
+  const it=e.target.closest('.it'); if(!it) return;
+  e.preventDefault(); // не дать input потерять фокус до клика
+  acFill(acItems[+it.dataset.i]);
+});
+document.addEventListener('mousedown', e=>{
+  if(e.target.closest('#acBox') || e.target.classList.contains('f-name')) return;
+  acHide();
+});
+window.addEventListener('scroll', e=>{
+  const t=e.target;
+  if(t && t.nodeType===1 && t.closest && t.closest('#acBox')) return; // прокрутка внутри списка
+  acHide();
+}, true);
+
+// старт — подхватываем кэш справочников; в онлайне сначала проверяем вход
+loadCachedTables();
+initOnline();
+</script>
+</body>
+</html>
